@@ -80,7 +80,7 @@ data AcceptRequest = AcceptRequest
 -- | Utility
 sendResponse :: PendingConnection -> Response -> IO ()
 sendResponse pc rsp = Stream.write (pendingStream pc)
-    (Builder.toLazyByteString (encodeResponse rsp))
+    (encodeResponse rsp)
 
 
 --------------------------------------------------------------------------------

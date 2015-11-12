@@ -11,6 +11,8 @@ module Network.WebSockets.Types
     , ConnectionException (..)
 
     , ConnectionType (..)
+
+    , ByteStringChunks (..)
     ) where
 
 
@@ -23,6 +25,7 @@ import qualified Data.Text.Lazy          as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import           Data.Typeable           (Typeable)
 import           Data.Word               (Word16)
+import           Data.Monoid             (Monoid)
 
 
 --------------------------------------------------------------------------------
@@ -129,3 +132,13 @@ instance Exception ConnectionException
 --------------------------------------------------------------------------------
 data ConnectionType = ServerConnection | ClientConnection
     deriving (Eq, Ord, Show)
+
+
+--------------------------------------------------------------------------------
+-- | Consists of multiple ByteString chunks held in reverse order.
+newtype ByteStringChunks = ByteStringChunks [B.ByteString]
+    deriving (Eq, Ord, Show)
+
+instance Monoid ByteStringChunks where
+    mempty                                                  = ByteStringChunks []
+    mappend (ByteStringChunks b1) (ByteStringChunks b2)     = ByteStringChunks (b2 ++ b1)

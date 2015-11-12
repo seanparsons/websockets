@@ -25,6 +25,7 @@ import           Data.Binary.Get                       (getWord16be,
 import           Data.Binary.Put                       (putWord16be, runPut)
 import           Data.Bits                             ((.&.), (.|.))
 import           Data.ByteString                       (ByteString)
+import qualified Data.ByteString                       as BS
 import qualified Data.ByteString.Base64                as B64
 import           Data.ByteString.Char8                 ()
 import qualified Data.ByteString.Lazy                  as BL
@@ -46,6 +47,9 @@ import           Network.WebSockets.Stream             (Stream)
 import qualified Network.WebSockets.Stream             as Stream
 import           Network.WebSockets.Types
 
+--------------------------------------------------------------------------------
+byteStringToChunks :: ByteString -> ByteStringChunks
+byteStringToChunks bs = ByteStringChunks [bs]
 
 --------------------------------------------------------------------------------
 headerVersions :: [ByteString]
@@ -87,8 +91,8 @@ finishResponse request response
 
 
 --------------------------------------------------------------------------------
-encodeMessage :: RandomGen g => ConnectionType -> g -> Message -> (g, B.Builder)
-encodeMessage conType gen msg = (gen', builder `mappend` B.flush)
+encodeMessage :: RandomGen g => ConnectionType -> g -> Message -> (g, ByteStringChunks)
+encodeMessage conType gen msg = (gen', builder)
   where
     mkFrame      = Frame True False False False
     (mask, gen') = case conType of
@@ -112,14 +116,16 @@ encodeMessages conType stream = do
     genRef <- newIORef =<< newStdGen
     return $ \msg -> do
         builder <- atomicModifyIORef genRef $ \s -> encodeMessage conType s msg
-        Stream.write stream (B.toLazyByteString builder)
+        Stream.write stream builder
 
 
 --------------------------------------------------------------------------------
-encodeFrame :: Mask -> Frame -> B.Builder
-encodeFrame mask f = B.fromWord8 byte0 `mappend`
-    B.fromWord8 byte1 `mappend` len `mappend` maskbytes `mappend`
-    B.fromLazyByteString (maskPayload mask (framePayload f))
+encodeFrame :: Mask -> Frame -> ByteStringChunks
+encodeFrame mask f = (byteStringToChunks $ BS.singleton byte0) `mappend`
+    (byteStringToChunks $ BS.singleton byte1) `mappend`
+    (byteStringToChunks len) `mappend`
+    (byteStringToChunks maskbytes) `mappend`
+    (byteStringToChunks $ BL.toStrict (maskPayload mask (framePayload f)))
   where
     byte0  = fin .|. rsv1 .|. rsv2 .|. rsv3 .|. opcode
     fin    = if frameFin f  then 0x80 else 0x00
@@ -136,14 +142,14 @@ encodeFrame mask f = B.fromWord8 byte0 `mappend`
 
     (maskflag, maskbytes) = case mask of
         Nothing -> (0x00, mempty)
-        Just m  -> (0x80, B.fromByteString m)
+        Just m  -> (0x80, m)
 
     byte1 = maskflag .|. lenflag
     len'  = BL.length (framePayload f)
     (lenflag, len)
         | len' < 126     = (fromIntegral len', mempty)
-        | len' < 0x10000 = (126, B.fromWord16be (fromIntegral len'))
-        | otherwise      = (127, B.fromWord64be (fromIntegral len'))
+        | len' < 0x10000 = (126, B.toByteString $ B.fromWord16be (fromIntegral len'))
+        | otherwise      = (127, B.toByteString $ B.fromWord64be (fromIntegral len'))
 
 
 --------------------------------------------------------------------------------

@@ -22,13 +22,7 @@ import           Data.IORef                     (IORef, atomicModifyIORef,
                                                  newIORef, readIORef,
                                                  writeIORef)
 import qualified Network.Socket                 as S
-import qualified Network.Socket.ByteString      as SB (recv)
-
-#if !defined(mingw32_HOST_OS)
-import qualified Network.Socket.ByteString.Lazy as SBL (sendAll)
-#else
-import qualified Network.Socket.ByteString      as SB (sendAll)
-#endif
+import qualified Network.Socket.ByteString      as SB (recv, sendAll)
 
 import           Network.WebSockets.Types
 
@@ -44,7 +38,7 @@ data StreamState
 -- | Lightweight abstraction over an input/output stream.
 data Stream = Stream
     { streamIn    :: IO (Maybe B.ByteString)
-    , streamOut   :: (Maybe BL.ByteString -> IO ())
+    , streamOut   :: (Maybe ByteStringChunks -> IO ())
     , streamState :: !(IORef StreamState)
     }
 
@@ -64,7 +58,7 @@ data Stream = Stream
 -- - Streams should always be closed.
 makeStream
     :: IO (Maybe B.ByteString)         -- ^ Reading
-    -> (Maybe BL.ByteString -> IO ())  -- ^ Writing
+    -> (Maybe ByteStringChunks -> IO ())  -- ^ Writing
     -> IO Stream                       -- ^ Resulting stream
 makeStream receive send = do
     ref         <- newIORef (Open B.empty)
@@ -91,7 +85,7 @@ makeStream receive send = do
             Nothing -> closeRef ref >> return Nothing
             Just bs -> return (Just bs)
 
-    send' :: IORef StreamState -> MVar () -> (Maybe BL.ByteString -> IO ())
+    send' :: IORef StreamState -> MVar () -> (Maybe ByteStringChunks -> IO ())
     send' ref lock mbBs = withMVar lock $ \() -> assertNotClosed ref $ do
         when (mbBs == Nothing) (closeRef ref)
         onException (send mbBs) (closeRef ref)
@@ -106,12 +100,8 @@ makeSocketStream socket = makeStream receive send
         return $ if B.null bs then Nothing else Just bs
 
     send Nothing   = return ()
-    send (Just bs) = do
-#if !defined(mingw32_HOST_OS)
-        SBL.sendAll socket bs
-#else
-        forM_ (BL.toChunks bs) (SB.sendAll socket)
-#endif
+    send (Just (ByteStringChunks bs)) = do
+        forM_ (reverse bs) (SB.sendAll socket)
 
 
 --------------------------------------------------------------------------------
@@ -120,7 +110,7 @@ makeEchoStream = do
     mvar <- newEmptyMVar
     makeStream (takeMVar mvar) $ \mbBs -> case mbBs of
         Nothing -> putMVar mvar Nothing
-        Just bs -> forM_ (BL.toChunks bs) $ \c -> putMVar mvar (Just c)
+        Just (ByteStringChunks bs) -> forM_ bs $ \c -> putMVar mvar (Just c)
 
 
 --------------------------------------------------------------------------------
@@ -157,7 +147,7 @@ parse stream parser = do
 
 
 --------------------------------------------------------------------------------
-write :: Stream -> BL.ByteString -> IO ()
+write :: Stream -> ByteStringChunks -> IO ()
 write stream = streamOut stream . Just
 
 

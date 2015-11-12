@@ -108,25 +108,28 @@ data HandshakeException
 --------------------------------------------------------------------------------
 instance Exception HandshakeException
 
+--------------------------------------------------------------------------------
+byteStringToChunks :: ByteString -> ByteStringChunks
+byteStringToChunks bs = ByteStringChunks [bs]
 
 --------------------------------------------------------------------------------
-encodeRequestHead :: RequestHead -> Builder.Builder
+encodeRequestHead :: RequestHead -> ByteStringChunks
 encodeRequestHead (RequestHead path headers _) =
-    Builder.copyByteString "GET "      `mappend`
-    Builder.copyByteString path        `mappend`
-    Builder.copyByteString " HTTP/1.1" `mappend`
-    Builder.fromByteString "\r\n"      `mappend`
-    mconcat (map header headers)       `mappend`
-    Builder.copyByteString "\r\n"
+    byteStringToChunks "GET "      `mappend`
+    byteStringToChunks path        `mappend`
+    byteStringToChunks " HTTP/1.1" `mappend`
+    byteStringToChunks "\r\n"      `mappend`
+    mconcat (map header headers)   `mappend`
+    byteStringToChunks "\r\n"
   where
-    header (k, v) = mconcat $ map Builder.copyByteString
+    header (k, v) = mconcat $ map byteStringToChunks
         [CI.original k, ": ", v, "\r\n"]
 
 
 --------------------------------------------------------------------------------
 encodeRequest :: Request -> Builder.Builder
 encodeRequest (Request head' body) =
-    encodeRequestHead head' `mappend` Builder.copyByteString body
+    encodeRequestHead head' `mappend` byteStringToChunks body
 
 
 --------------------------------------------------------------------------------
@@ -147,7 +150,7 @@ decodeRequestHead isSecure = RequestHead
 
 --------------------------------------------------------------------------------
 -- | Encode an HTTP upgrade response
-encodeResponseHead :: ResponseHead -> Builder.Builder
+encodeResponseHead :: ResponseHead -> ByteStringChunks
 encodeResponseHead (ResponseHead code msg headers) =
     Builder.copyByteString "HTTP/1.1 " `mappend`
     Builder.fromString (show code)     `mappend`

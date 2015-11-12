@@ -50,7 +50,7 @@ Flag Example
 
 Library
   Hs-source-dirs: src
-  Ghc-options:    -Wall
+  Ghc-options:    -Wall -rtsopts -auto-all -caf-all -funfolding-use-threshold=16 -O2 -optc-O3
 
   Exposed-modules:
     Network.WebSockets
